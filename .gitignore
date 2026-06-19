@@ -3,7 +3,22 @@ target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-test.mv.db
+test*.db
+.m2/
+.env
+.kubeconfig
+rendered.yaml
+evidence/*.log
+evidence/*.txt
+*.zip
+*.rar
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+terraform/**/kubeconfig*
+crash.log
 
 ### STS ###
 .apt_generated
