@@ -321,7 +321,7 @@ No se versionan logs generados ni capturas con secretos. Las capturas finales pu
 Para generar el ZIP después de revisar y hacer commit:
 
 ```bash
-make zip
+git archive --format=zip --output=../devsu-demo-devops-java.zip HEAD
 ```
 
 `git archive` incluye únicamente archivos versionados, por lo que excluye secretos, `target/`, cachés y estado local. En la entrega se deben compartir:
