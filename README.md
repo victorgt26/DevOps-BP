@@ -287,8 +287,8 @@ Para producción debe sustituirse por PostgreSQL/RDS/Cloud SQL, con driver aprop
 
 ```bash
 # Crear terraform/aws-k3s/terraform.tfvars según terraform/aws-k3s/README.md.
-AWS_PROFILE=csibol terraform -chdir=terraform/aws-k3s init
-AWS_PROFILE=csibol terraform -chdir=terraform/aws-k3s plan -out=tfplan
+AWS_PROFILE=nombre_profile terraform -chdir=terraform/aws-k3s init
+AWS_PROFILE=nombre_profile terraform -chdir=terraform/aws-k3s plan -out=tfplan
 ```
 
 `terraform.tfvars` usa el nombre estándar de Terraform para los valores del entorno real y está excluido de Git; `variables.tf` conserva públicamente el contrato de configuración. No se ejecutó `apply`: EC2, EBS e IPv4 pública pueden generar coste. Revisar CIDR administrativos y key pair antes de aprovisionar. Al finalizar:
@@ -296,7 +296,7 @@ AWS_PROFILE=csibol terraform -chdir=terraform/aws-k3s plan -out=tfplan
 El archivo `.terraform.lock.hcl` sí se versiona e incluye checksums para `darwin_arm64` —desarrollo local— y `linux_amd64` —GitHub Actions—. El pipeline usa `terraform init -lockfile=readonly` para impedir cambios silenciosos de proveedor.
 
 ```bash
-AWS_PROFILE=csibol terraform -chdir=terraform/aws-k3s destroy
+AWS_PROFILE=nombre_profile terraform -chdir=terraform/aws-k3s destroy
 ```
 
 ## Consideraciones adicionales para producción
