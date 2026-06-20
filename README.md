@@ -261,7 +261,8 @@ base64 < ~/.kube/config | tr -d '\n'
 ## Decisiones de diseño
 
 - **Java 17:** se conserva el LTS requerido por el starter y se fija en local, Docker y CI.
-- **Spring Boot 3.5:** actualización dentro de la misma generación mayor para recibir correcciones sin introducir una migración a Spring Boot 4.
+- **Spring Boot 3.5:** se mantiene la última revisión estable de esta generación para recibir correcciones, incluidas actualizaciones de seguridad del servidor embebido, sin introducir una migración a Spring Boot 4.
+- **Runtime actualizado:** Temurin 17 utiliza Ubuntu 24.04 Noble fijado por digest; Trivy bloquea la publicación si la base o las dependencias contienen vulnerabilidades HIGH/CRITICAL corregibles.
 - **Build once:** CI prueba y analiza un único JAR; Docker empaqueta exactamente ese binario en lugar de volver a compilarlo con tests omitidos.
 - **Usuario no-root:** el UID/GID fijo `10001` reduce privilegios y coincide con el `securityContext` de Kubernetes; crear la identidad explícitamente mantiene permisos y diagnósticos predecibles también al ejecutar con Docker.
 - **Actuator:** Kubernetes usa probes semánticas, no una simple comprobación de puerto. El Dockerfile omite deliberadamente `HEALTHCHECK` porque Kubernetes no lo utiliza y ya define sus propios umbrales y periodos.
