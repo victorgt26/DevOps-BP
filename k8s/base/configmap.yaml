@@ -6,3 +6,4 @@ data:
   PORT: "8000"
   SPRING_DATASOURCE_URL: "jdbc:h2:mem:demo;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE"
   SHUTDOWN_TIMEOUT: "20s"
+  JAVA_TOOL_OPTIONS: "-XX:InitialRAMPercentage=20.0 -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError"

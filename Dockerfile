@@ -15,7 +15,7 @@ COPY --chown=app:app target/demo-*.jar app.jar
 USER 10001:10001
 EXPOSE 8000
 
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError" \
+ENV JAVA_TOOL_OPTIONS="-XX:+ExitOnOutOfMemoryError" \
     PORT=8000
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
