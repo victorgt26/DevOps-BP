@@ -1,0 +1,263 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the validated image to production
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Build, tests and quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: quality-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Java 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build, unit tests, coverage and SpotBugs
+        run: ./mvnw -B --no-transfer-progress clean verify
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-reports
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+            target/spotbugsXml.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload verified application artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: application-jar
+          path: target/demo-*.jar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  manifests:
+    name: Validate Kubernetes manifests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: manifests-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
+        with:
+          version: v1.34.1
+
+      - name: Render all Kubernetes variants
+        run: |
+          kubectl kustomize k8s/base > rendered-base.yaml
+          kubectl kustomize k8s/overlays/aws > rendered-aws.yaml
+
+      - name: Validate Kubernetes schemas
+        run: |
+          docker run --rm \
+            --volume "$PWD:/work" \
+            ghcr.io/yannh/kubeconform:v0.7.0@sha256:85dbef6b4b312b99133decc9c6fc9495e9fc5f92293d4ff3b7e1b30f5611823c \
+            -strict -summary \
+            /work/rendered-base.yaml /work/rendered-aws.yaml
+
+      - name: Upload rendered manifests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kubernetes-manifests
+          path: rendered-*.yaml
+          if-no-files-found: error
+          retention-days: 14
+
+  iac:
+    name: Validate Terraform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: iac-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+
+      - name: Format check
+        run: terraform -chdir=terraform/aws-k3s fmt -check -recursive
+
+      - name: Initialize without backend
+        run: terraform -chdir=terraform/aws-k3s init -backend=false -input=false -lockfile=readonly
+
+      - name: Validate configuration
+        run: terraform -chdir=terraform/aws-k3s validate
+
+  container:
+    name: Build, scan and publish image
+    needs: [quality, manifests, iac]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: container-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-reference: ${{ steps.publish.outputs.image-reference }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Download verified application artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: application-jar
+          path: target
+
+      - name: Define image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build image locally
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate CycloneDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          format: cyclonedx
+          output: trivy-sbom.cdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: container-sbom
+          path: trivy-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Scan image for HIGH and CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish approved image and resolve digest
+        id: publish
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+        run: |
+          docker push "$IMAGE_NAME:$GITHUB_SHA"
+          docker push "$IMAGE_NAME:latest"
+          DIGEST="$(docker buildx imagetools inspect "$IMAGE_NAME:$GITHUB_SHA" --format '{{json .Manifest}}' | jq -r '.digest')"
+          test "${DIGEST#sha256:}" != "$DIGEST"
+          echo "image-reference=$IMAGE_NAME@$DIGEST" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy to Kubernetes
+    needs: container
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      (vars.DEPLOY_ENABLED == 'true' || inputs.deploy == true)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    environment: production
+    permissions:
+      contents: read
+    env:
+      KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
+      SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
+      SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+      KUSTOMIZE_PATH: ${{ vars.KUSTOMIZE_PATH || 'k8s/base' }}
+      IMAGE_REFERENCE: ${{ needs.container.outputs.image-reference }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Validate deployment configuration
+        run: |
+          test -n "$KUBE_CONFIG_DATA"
+          test -n "$SPRING_DATASOURCE_USERNAME"
+          test -n "$SPRING_DATASOURCE_PASSWORD"
+          test -n "$IMAGE_REFERENCE"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
+        with:
+          version: v1.34.1
+
+      - name: Configure cluster access
+        run: |
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG_DATA" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Deploy approved image digest
+        run: |
+          kubectl apply -f k8s/base/namespace.yaml
+          kubectl -n demo-devops create secret generic demo-devops-db \
+            --from-literal=SPRING_DATASOURCE_USERNAME="$SPRING_DATASOURCE_USERNAME" \
+            --from-literal=SPRING_DATASOURCE_PASSWORD="$SPRING_DATASOURCE_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -k "$KUSTOMIZE_PATH"
+          kubectl -n demo-devops set image deployment/demo-devops-java app="$IMAGE_REFERENCE"
+          kubectl -n demo-devops rollout status deployment/demo-devops-java --timeout=180s
+          test "$(kubectl -n demo-devops get deployment demo-devops-java -o jsonpath='{.spec.template.spec.containers[?(@.name=="app")].image}')" = "$IMAGE_REFERENCE"
+          kubectl -n demo-devops get pods,service,ingress,hpa

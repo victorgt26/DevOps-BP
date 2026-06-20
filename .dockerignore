@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.m2
+.vscode
+target/*
+!target/demo-*.jar
+test*.db
+*.log
+*.md
+k8s
+terraform

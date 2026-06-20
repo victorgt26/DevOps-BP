@@ -8,8 +8,6 @@ test*.db
 .env
 .kubeconfig
 rendered.yaml
-evidence/*.log
-evidence/*.txt
 *.zip
 *.rar
 .terraform/
