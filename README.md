@@ -131,7 +131,7 @@ El quality gate hace fallar CI si baja la cobertura o SpotBugs encuentra un defe
 
 El JAR se construye y valida antes de crear la imagen. El Dockerfile no compila ni ejecuta Maven: únicamente incorpora en una imagen Java 17 JRE el mismo `target/demo-*.jar` que superó tests, cobertura y análisis estático. Este patrón *build once, promote the same artifact* evita una segunda compilación con resultados potencialmente distintos.
 
-El contenedor ejecuta Java como UID/GID `10001`, sin privilegios y con límites de memoria conscientes del contenedor. La imagen base se fija por digest para que el contenido no cambie silenciosamente aunque el tag se actualice. No se instalan paquetes con `apt`: la imagen contiene únicamente lo proporcionado por Temurin más el JAR validado.
+El contenedor ejecuta Java como UID/GID `10001`, sin privilegios y con límites de memoria conscientes del contenedor. La imagen base se fija por digest para que el contenido no cambie silenciosamente aunque el tag se actualice. Durante el build se actualizan exclusivamente `openssl` y `libssl3t64`: no se agregan herramientas, y se corrigen parches de seguridad publicados por Ubuntu que todavía no estén incorporados en el digest de Temurin. Después se eliminan los índices de `apt`.
 
 El Dockerfile no declara `HEALTHCHECK`. Kubernetes no consume esa instrucción y ejecuta directamente `startupProbe`, `readinessProbe` y `livenessProbe`; mantener ambos mecanismos duplicaría rutas y tiempos susceptibles de divergir. Para una ejecución local con Docker, la salud puede validarse explícitamente con `curl` contra Actuator.
 
