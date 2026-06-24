@@ -16,7 +16,7 @@
 	<properties>
 		<java.version>17</java.version>
 		<jacoco.version>0.8.15</jacoco.version>
-		<spotbugs.version>4.9.8.3</spotbugs.version>
+		<spotbugs.version>4.10.2.0</spotbugs.version>
 	</properties>
 	<dependencies>
 		<dependency>
